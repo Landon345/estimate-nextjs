@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+/* Colours come from the EstiMate logo: the violet-to-blue of its triangle on
+   the grey faceted background the Tapestry app used. */
+@theme {
+  --color-brand: #5b54e8;
+  --color-brand-hover: #4a43d4;
+  --color-brand-soft: #ecebfd;
+  --color-ink: #1e2230;
+  --color-muted: #5d6475;
+  --color-line: #d9dce3;
+  --color-nav: #1b1e29;
+  --color-success: #1f7a4d;
+  --color-success-soft: #e3f4ea;
+  --color-danger: #b42d3a;
+  --color-danger-soft: #fbe7e9;
+  --color-warning: #8a5a00;
+  --color-warning-soft: #fdf1d8;
+  --color-info: #1f5fa8;
+  --color-info-soft: #e3eefb;
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  color: var(--color-ink);
+  background: #c9c9c9 url("/bg.jpg") center / cover fixed no-repeat;
+}
+
+/* <details>-based dropdowns: hide the default disclosure triangle. */
+summary::-webkit-details-marker {
+  display: none;
+}
+summary {
+  list-style: none;
+}

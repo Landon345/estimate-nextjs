@@ -1,0 +1,179 @@
+// Translated from the Cayenne datamap (estimate/src/main/resources/datamap.map.xml).
+// Join tables that only ever held one row per owner (ExerciseCategories,
+// SuggestionCategories) are collapsed into plain foreign keys.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Accounts ────────────────────────────────────────────────────────────────
+
+model User {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique @db.VarChar(128)
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  roles           Role[]
+  sessions        Session[]
+  tasks           Task[]
+  tags            Tag[]
+  suggestedEvents Event[]
+  estimates       Estimate[]
+}
+
+/// One of: admin, manager, moderator, basicUser.
+model Role {
+  id    Int    @id @default(autoincrement())
+  name  String @unique @db.VarChar(20)
+  users User[]
+}
+
+model Session {
+  id        Int      @id @default(autoincrement())
+  tokenHash String   @unique
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// ─── Tasks & hours ───────────────────────────────────────────────────────────
+
+model Task {
+  id              Int       @id @default(autoincrement())
+  name            String    @db.VarChar(128)
+  startDate       DateTime  @db.Date
+  estEndDate      DateTime  @db.Date
+  /// Set when the task is closed (completed, dropped, etc).
+  actualEndDate   DateTime? @db.Date
+  estimatedHours  Int
+  /// Optional 80% range around estimatedHours ("fairly sure it lands between these").
+  lowHours        Int?
+  highHours       Int?
+  completed       Boolean   @default(false)
+  dropped         Boolean   @default(false)
+  willNotComplete Boolean   @default(false)
+  canNotComplete  Boolean   @default(false)
+
+  userId    Int
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hours     HourLog[]
+  tags      Tag[]
+  revisions EstimateRevision[]
+
+  @@index([userId])
+}
+
+/// A snapshot of a task's estimate. The first one is the original estimate;
+/// another is written every time the task is re-estimated.
+model EstimateRevision {
+  id             Int      @id @default(autoincrement())
+  estimatedHours Int
+  lowHours       Int?
+  highHours      Int?
+  estEndDate     DateTime @db.Date
+  /// Why the estimate changed (empty for the original).
+  reason         String?  @db.VarChar(200)
+  createdAt      DateTime @default(now())
+
+  taskId Int
+  task   Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+}
+
+/// A user's own label for a kind of work ("coding", "writing"), so accuracy
+/// can be measured per kind.
+model Tag {
+  id   Int    @id @default(autoincrement())
+  name String @db.VarChar(30)
+
+  userId Int
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tasks  Task[]
+
+  @@unique([userId, name])
+}
+
+model HourLog {
+  id          Int      @id @default(autoincrement())
+  hoursLogged Int
+  date        DateTime @db.Date
+
+  taskId Int
+  task   Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+}
+
+// ─── Events & calibration ────────────────────────────────────────────────────
+
+model Category {
+  id          Int    @id @default(autoincrement())
+  name        String @unique @db.VarChar(128)
+  description String @db.VarChar(2048)
+
+  events      Event[]
+  exercises   Exercise[]
+  suggestions Suggestion[]
+}
+
+/// A user-suggested event; admins approve it and later record whether it happened.
+model Event {
+  id          Int      @id @default(autoincrement())
+  name        String   @db.VarChar(50)
+  description String   @db.VarChar(500)
+  eventDate   DateTime @db.Date
+  createdAt   DateTime @default(now())
+  isApproved  Boolean  @default(false)
+  /// null until an admin records the outcome.
+  result      Boolean?
+
+  categoryId  Int?
+  category    Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  suggestorId Int?
+  suggestor   User?     @relation(fields: [suggestorId], references: [id], onDelete: SetNull)
+
+  @@index([eventDate])
+}
+
+/// A calibration exercise users predict the outcome of (percent likelihood).
+model Exercise {
+  id              Int      @id @default(autoincrement())
+  name            String   @db.VarChar(128)
+  description     String   @db.VarChar(2048)
+  outcome         Boolean?
+  outcomeReported Boolean  @default(false)
+
+  categoryId Int
+  category   Category   @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  estimates  Estimate[]
+}
+
+model Estimate {
+  id                Int @id @default(autoincrement())
+  percentPrediction Int
+
+  exerciseId Int
+  exercise   Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+  userId     Int
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// A proposed exercise awaiting moderator approval.
+model Suggestion {
+  id          Int    @id @default(autoincrement())
+  name        String @db.VarChar(128)
+  description String @db.VarChar(2048)
+
+  categoryId Int
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+}
