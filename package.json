@@ -11,10 +11,14 @@
     "db:migrate": "prisma migrate dev",
     "db:seed": "prisma db seed",
     "db:reset": "prisma migrate reset && prisma db seed",
+    "db:cloud:status": "node --env-file=.env scripts/cloud-db.mjs migrate status",
+    "db:cloud:deploy": "node --env-file=.env scripts/cloud-db.mjs migrate deploy",
+    "db:cloud:seed": "node --env-file=.env scripts/cloud-db.mjs db seed",
     "postinstall": "prisma generate"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",
+    "@google/genai": "^2.32.0",
     "@prisma/adapter-pg": "^7.10.1",
     "@prisma/client": "^7.10.1",
     "@radix-ui/react-popover": "^1.3.1",

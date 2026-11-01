@@ -19,8 +19,9 @@ pnpm db:seed                     # roles, demo users, categories, sample data
 pnpm dev
 ```
 
-To turn on AI estimate suggestions, add `ANTHROPIC_API_KEY` to `.env`. Without
-it the button is hidden and everything else works.
+To turn on AI estimate suggestions, add `GEMINI_API_KEY` (free tier) or
+`ANTHROPIC_API_KEY` to `.env`; Gemini is used if both are set. Without either,
+the button is hidden and everything else works.
 
 Seeded logins (password `pass1234` for all, as in the original):
 
@@ -43,6 +44,34 @@ rules (10+ chars, upper, lower, digit, one of `!@#$%^&*`).
 | `pnpm db:seed` | `prisma db seed` (safe to re-run) |
 | `pnpm db:reset` | drop, re-migrate and re-seed |
 
+## Deploying
+
+The hosted database is Prisma Postgres (us-east-1). Put its **pooled** connection
+string in `.env` as `CLOUD_DATABASE_URL`, then manage it from your machine:
+
+| Script | |
+| --- | --- |
+| `pnpm db:cloud:status` | which migrations the cloud DB has |
+| `pnpm db:cloud:deploy` | apply new migrations (run this before deploying a schema change) |
+| `pnpm db:cloud:seed` | roles and categories only; add `--demo` for the `pass1234` demo accounts |
+
+These use the direct host (`db.prisma.io`, derived from the pooled URL), which
+migrations need. Set `CLOUD_DIRECT_URL` if yours differs.
+
+The app picks its database from `ENVIRONMENT`: `PRODUCTION` connects to
+`CLOUD_DATABASE_URL`, anything else (`DEV` locally) to `DATABASE_URL`. The Prisma
+CLI and seed always use `DATABASE_URL`, so `pnpm db:reset` can't touch the cloud.
+
+On Vercel (or similar), set these environment variables:
+
+- `ENVIRONMENT`: `PRODUCTION`
+- `CLOUD_DATABASE_URL`: the pooled Prisma Postgres string
+- `GEMINI_API_KEY` (or `ANTHROPIC_API_KEY`), optional
+
+The build runs `prisma generate && next build`; it doesn't migrate, so preview
+deployments can't change the shared database. Keep the functions in `iad1`
+(Washington, D.C., which is us-east-1) to sit next to the database.
+
 ## Layout
 
 ```
@@ -52,7 +81,7 @@ src/proxy.ts                redirects signed-out visitors to /login
 src/lib/auth.ts             cookie sessions (DB-backed), bcrypt, role checks
 src/lib/estimation.ts       report math, plus the history factors (shared with the browser)
 src/app/actions/*.ts        server actions (all mutations, each re-checks auth)
-src/app/actions/ai.ts       "Suggest an estimate" (Claude, structured output)
+src/app/actions/ai.ts       "Suggest an estimate" (Gemini Flash-Lite or Claude, structured output)
 src/components/ui/          shadcn/ui Popover + Calendar, restyled to the app's tokens
 src/components/date-picker.tsx  shadcn date picker that posts yyyy-mm-dd like a date input
 src/app/**/page.tsx         pages; dynamic parts stream in behind <Suspense>
@@ -74,9 +103,10 @@ Additions beyond the original app:
   It narrows to tasks sharing the selected tags once there are at least 3.
 - **80% range estimates.** An optional low–high range. The hint reports how often
   your ranges caught the real hours; well-calibrated ranges should hit about 80%.
-- **AI estimate suggestion** (needs `ANTHROPIC_API_KEY`). Sends the new task's name
-  and tags, plus your 40 most recent completed tasks (name, tags, estimate, actual)
-  to Claude, which returns an estimate, a range and a one-line rationale.
+- **AI estimate suggestion** (needs `GEMINI_API_KEY` or `ANTHROPIC_API_KEY`). Sends
+  the new task's name and tags, plus your 40 most recent completed tasks (name, tags,
+  estimate, actual) to Gemini (`gemini-flash-lite-latest`) or Claude, which returns
+  an estimate, a range and a one-line rationale.
 - **Date pickers** are shadcn/ui (Radix Popover + react-day-picker) everywhere a
   date is chosen. The report's month selector is still a native month input.
 

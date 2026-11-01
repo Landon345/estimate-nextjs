@@ -1,6 +1,6 @@
 import { TaskEstimateFields } from "@/components/task-estimate-fields";
 import { LoadingRows } from "@/components/ui";
-import { aiEnabled } from "@/lib/ai";
+import { AI_NAMES, aiProvider } from "@/lib/ai";
 import { loadOutcomes, userTagNames } from "@/lib/tasks";
 
 /**
@@ -15,7 +15,15 @@ export async function TaskEstimateSection({
   defaults?: Parameters<typeof TaskEstimateFields>[0]["defaults"];
 }) {
   const [knownTags, outcomes] = await Promise.all([userTagNames(userId), loadOutcomes(userId)]);
-  return <TaskEstimateFields defaults={defaults} knownTags={knownTags} outcomes={outcomes} aiEnabled={aiEnabled()} />;
+  const provider = aiProvider();
+  return (
+    <TaskEstimateFields
+      defaults={defaults}
+      knownTags={knownTags}
+      outcomes={outcomes}
+      aiName={provider && AI_NAMES[provider]}
+    />
+  );
 }
 
 export function EstimateFieldsFallback() {

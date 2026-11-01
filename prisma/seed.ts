@@ -1,7 +1,8 @@
 // Seeds what the Tapestry app created at startup (CayenneUserAccountDatabaseService
 // and EstimationCategoryFactory), plus sample tasks and events so every page
 // has something to show. Safe to re-run: it upserts by unique name and only
-// adds sample tasks/events to accounts that have none.
+// adds sample tasks/events to accounts that have none. SEED_DEMO=0 seeds only
+// roles and categories, without the demo accounts (used for the cloud DB).
 
 import "dotenv/config";
 import bcrypt from "bcryptjs";
@@ -61,17 +62,6 @@ async function main() {
     await prisma.role.upsert({ where: { name }, update: {}, create: { name } });
   }
 
-  const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, 10);
-  const users: Record<string, number> = {};
-  for (const { username, roles } of USERS) {
-    const user = await prisma.user.upsert({
-      where: { username },
-      update: {},
-      create: { username, passwordHash, roles: { connect: roles.map((name) => ({ name })) } },
-    });
-    users[username] = user.id;
-  }
-
   const categories: Record<string, number> = {};
   for (const { name, description, exercises } of CATEGORIES) {
     const category = await prisma.category.upsert({ where: { name }, update: {}, create: { name, description } });
@@ -85,6 +75,22 @@ async function main() {
         })),
       });
     }
+  }
+
+  if (process.env.SEED_DEMO === "0") {
+    console.log("Seeded roles and categories (no demo accounts).");
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, 10);
+  const users: Record<string, number> = {};
+  for (const { username, roles } of USERS) {
+    const user = await prisma.user.upsert({
+      where: { username },
+      update: {},
+      create: { username, passwordHash, roles: { connect: roles.map((name) => ({ name })) } },
+    });
+    users[username] = user.id;
   }
 
   await seedTasks(users.JohnDoe);

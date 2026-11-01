@@ -23,12 +23,13 @@ export function TaskEstimateFields({
   defaults = {},
   knownTags,
   outcomes,
-  aiEnabled,
+  aiName,
 }: {
   defaults?: Defaults;
   knownTags: string[];
   outcomes: TaskOutcome[];
-  aiEnabled: boolean;
+  /** "Gemini" or "Claude" when an API key is configured; null hides the button. */
+  aiName: string | null;
 }) {
   const [tags, setTags] = useState<string[]>(defaults.tags ?? []);
   const [hours, setHours] = useState(defaults.estimatedHours?.toString() ?? "");
@@ -71,7 +72,7 @@ export function TaskEstimateFields({
 
       <HistoryHint outcomes={outcomes} tags={tags} hours={Number(hours)} onApply={(h) => setEstimate({ estimatedHours: h })} />
 
-      {aiEnabled && <AiSuggestion tags={tags} onApply={setEstimate} />}
+      {aiName && <AiSuggestion aiName={aiName} tags={tags} onApply={setEstimate} />}
     </>
   );
 }
@@ -215,7 +216,7 @@ function HistoryHint({
   );
 }
 
-function AiSuggestion({ tags, onApply }: { tags: string[]; onApply: (s: EstimateSuggestion) => void }) {
+function AiSuggestion({ aiName, tags, onApply }: { aiName: string; tags: string[]; onApply: (s: EstimateSuggestion) => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pending, startTransition] = useTransition();
   const [result, setResult] = useState<{ suggestion?: EstimateSuggestion; error?: string } | null>(null);
@@ -239,7 +240,7 @@ function AiSuggestion({ tags, onApply }: { tags: string[]; onApply: (s: Estimate
   return (
     <div ref={ref} className="space-y-2">
       <Button type="button" variant="secondary" className="w-full" onClick={ask} disabled={pending}>
-        {pending ? "Asking Claude…" : "✨ Suggest an estimate"}
+        {pending ? `Asking ${aiName}…` : "✨ Suggest an estimate"}
       </Button>
       {result?.error && (
         <p role="alert" className="text-sm text-danger">

@@ -2,16 +2,19 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
+import { ApiError, FinishReason, GoogleGenAI } from "@google/genai";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { daysBetween, parseDateInput, today } from "@/lib/dates";
-import { aiEnabled } from "@/lib/ai";
+import { AI_NAMES, aiProvider } from "@/lib/ai";
 import { calibrate, originalEstimate, toOutcome, totalHours } from "@/lib/estimation";
 import { prisma } from "@/lib/prisma";
 import { normalizeTags } from "@/lib/tag-names";
 import { HISTORY_INCLUDE } from "@/lib/tasks";
 
-const MODEL = "claude-opus-5-5";
+const CLAUDE_MODEL = "claude-opus-5-5";
+/** Google's alias for its newest Flash-Lite, the cheapest Gemini model (also on the free tier). */
+const GEMINI_MODEL = "gemini-flash-lite-latest";
 /** Most recent completed tasks sent as context; plenty to spot patterns, cheap to send. */
 const HISTORY_LIMIT = 40;
 const COOLDOWN_MS = 5_000;
@@ -32,6 +35,9 @@ const SuggestionSchema = z.object({
   rationale: z.string(),
 });
 
+/** The model's raw answer, before the numbers are sanity-checked. */
+type Answer = { output: z.infer<typeof SuggestionSchema> } | { error: string };
+
 const SYSTEM = `You help one person estimate how many hours a task will take, using their own track record.
 
 You get the new task and a list of tasks they have completed, each with the original estimate and what it actually took. Look for completed tasks similar to the new one (by name and tags) and for how this person's estimates usually compare with reality.
@@ -51,7 +57,8 @@ export async function suggestEstimate(input: {
   estEndDate?: string;
 }): Promise<SuggestResult> {
   const user = await requireUser();
-  if (!aiEnabled()) return { error: "AI suggestions aren't set up. Add ANTHROPIC_API_KEY to .env." };
+  const provider = aiProvider();
+  if (!provider) return { error: "AI suggestions aren't set up. Add GEMINI_API_KEY or ANTHROPIC_API_KEY to .env." };
 
   const name = typeof input.name === "string" ? input.name.trim().slice(0, 25) : "";
   if (!name) return { error: "Enter a task name first, so there's something to estimate." };
@@ -97,9 +104,27 @@ export async function suggestEstimate(input: {
     lines.length ? lines.join("\n") : "(none yet)"
   }\n\n${summary}`;
 
+  const answer = provider === "gemini" ? await askGemini(prompt) : await askClaude(prompt);
+  if ("error" in answer) return answer;
+
+  // Don't trust the model to keep its own numbers consistent.
+  const parsed = answer.output;
+  const estimatedHours = Math.max(1, parsed.estimatedHours);
+  return {
+    suggestion: {
+      estimatedHours,
+      lowHours: Math.max(1, Math.min(parsed.lowHours, estimatedHours)),
+      highHours: Math.max(parsed.highHours, estimatedHours),
+      rationale: parsed.rationale.trim(),
+    },
+  };
+}
+
+async function askClaude(prompt: string): Promise<Answer> {
+  const name = AI_NAMES.claude;
   try {
     const response = await new Anthropic().beta.messages.parse({
-      model: MODEL,
+      model: CLAUDE_MODEL,
       max_tokens: 16000,
       // Falls back to another model server-side if a safety classifier declines.
       betas: ["server-side-fallback-2026-07-01"],
@@ -109,27 +134,56 @@ export async function suggestEstimate(input: {
       messages: [{ role: "user", content: prompt }],
     });
 
-    if (response.stop_reason === "refusal") return { error: "Claude declined to suggest an estimate for this task." };
-    const parsed = response.parsed_output;
-    if (!parsed) return { error: "Claude's answer couldn't be read. Please try again." };
-
-    // Don't trust the model to keep its own numbers consistent.
-    const estimatedHours = Math.max(1, parsed.estimatedHours);
-    return {
-      suggestion: {
-        estimatedHours,
-        lowHours: Math.max(1, Math.min(parsed.lowHours, estimatedHours)),
-        highHours: Math.max(parsed.highHours, estimatedHours),
-        rationale: parsed.rationale.trim(),
-      },
-    };
+    if (response.stop_reason === "refusal") return { error: `${name} declined to suggest an estimate for this task.` };
+    if (!response.parsed_output) return { error: `${name}'s answer couldn't be read. Please try again.` };
+    return { output: response.parsed_output };
   } catch (error) {
     if (error instanceof Anthropic.AuthenticationError) return { error: "The Anthropic API key was rejected." };
-    if (error instanceof Anthropic.RateLimitError) return { error: "Too many requests to Claude right now. Try again shortly." };
+    if (error instanceof Anthropic.RateLimitError) return { error: `Too many requests to ${name} right now. Try again shortly.` };
     if (error instanceof Anthropic.APIError) {
       console.error("suggestEstimate:", error.status, error.message);
-      return { error: "Claude couldn't be reached. Please try again." };
+      return { error: `${name} couldn't be reached. Please try again.` };
     }
     throw error;
+  }
+}
+
+async function askGemini(prompt: string): Promise<Answer> {
+  const name = AI_NAMES.gemini;
+  // Gemini's schema support omits $schema, so leave it out.
+  const schema: Record<string, unknown> = z.toJSONSchema(SuggestionSchema);
+  delete schema.$schema;
+  try {
+    const response = await new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }).models.generateContent({
+      model: GEMINI_MODEL,
+      contents: prompt,
+      config: { systemInstruction: SYSTEM, responseMimeType: "application/json", responseJsonSchema: schema },
+    });
+
+    const finish = response.candidates?.[0]?.finishReason;
+    if (response.promptFeedback?.blockReason || finish === FinishReason.SAFETY || finish === FinishReason.PROHIBITED_CONTENT) {
+      return { error: `${name} declined to suggest an estimate for this task.` };
+    }
+    let json: unknown;
+    try {
+      json = JSON.parse(response.text ?? "");
+    } catch {
+      json = null;
+    }
+    const parsed = SuggestionSchema.safeParse(json);
+    if (!parsed.success) return { error: `${name}'s answer couldn't be read. Please try again.` };
+    return { output: parsed.data };
+  } catch (error) {
+    if (error instanceof ApiError) {
+      // A bad key comes back as 400 "API key not valid", or as 401/403.
+      if (error.status === 401 || error.status === 403 || /api key/i.test(error.message)) {
+        return { error: "The Gemini API key was rejected." };
+      }
+      if (error.status === 429) return { error: `${name}'s rate limit was reached (the free tier allows only so many a minute). Try again shortly.` };
+      console.error("suggestEstimate:", error.status, error.message);
+    } else {
+      console.error("suggestEstimate:", error);
+    }
+    return { error: `${name} couldn't be reached. Please try again.` };
   }
 }

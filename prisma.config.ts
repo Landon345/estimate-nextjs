@@ -8,6 +8,8 @@ export default defineConfig({
     seed: "tsx prisma/seed.ts",
   },
   datasource: {
-    url: process.env["DATABASE_URL"],
+    // The CLI needs a direct connection; hosted Postgres (Prisma Postgres) gives
+    // the app a pooled DATABASE_URL and a separate DIRECT_URL for migrations.
+    url: process.env["DIRECT_URL"] ?? process.env["DATABASE_URL"],
   },
 });
