@@ -38,9 +38,12 @@ async function EditTaskForm({ params }: { params: PageProps<"/tasks/[id]/edit">[
   }
 
   const tags = await prisma.tag.findMany({ where: { tasks: { some: { id: task.id } } }, orderBy: { name: "asc" } });
+  // Next keeps visited pages mounted in the background, and the fields' state
+  // would outlive a save. Keying on the saved values rebuilds the form from them.
+  const saved = [task.name, toDateInput(task.estEndDate), task.estimatedHours, task.lowHours, task.highHours, ...tags.map((t) => t.name)];
 
   return (
-    <ActionForm action={updateTask.bind(null, task.id)}>
+    <ActionForm key={saved.join("|")} action={updateTask.bind(null, task.id)}>
       <Field label="Name" htmlFor="name">
         <Input id="name" name="name" defaultValue={task.name} maxLength={25} required />
       </Field>

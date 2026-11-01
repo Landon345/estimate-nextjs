@@ -24,6 +24,7 @@ export default function LoginPage() {
             Cancel
           </ButtonLink>
         </div>
+        <p className="text-center text-sm text-muted">Forgot your password? Ask an admin to reset it.</p>
       </ActionForm>
     </FormCard>
   );

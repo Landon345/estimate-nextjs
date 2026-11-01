@@ -54,6 +54,7 @@ string in `.env` as `CLOUD_DATABASE_URL`, then manage it from your machine:
 | `pnpm db:cloud:status` | which migrations the cloud DB has |
 | `pnpm db:cloud:deploy` | apply new migrations (run this before deploying a schema change) |
 | `pnpm db:cloud:seed` | roles and categories only; add `--demo` for the `pass1234` demo accounts |
+| `pnpm db:cloud:admin [username]` | create an admin (default `Admin`) or reset its password; prints a new random password once |
 
 These use the direct host (`db.prisma.io`, derived from the pooled URL), which
 migrations need. Set `CLOUD_DIRECT_URL` if yours differs.
@@ -125,6 +126,7 @@ session-dependent content into it.
 | events/Index, Add, Edit | `/events`, `/events/new`, `/events/[id]/edit` |
 | categories/Index, Add | `/categories`, `/categories/new` (admin) |
 | estimation/* | `/estimation`, `/estimation/[categoryId]`, `…/suggest`, `/estimation/exercises/[id]`, `/estimation/suggestions` (admin) |
+| users/MyAccount, EditUsers (unfinished in the original) | `/account` (change password), `/users` (admin: reset passwords) |
 
 ## Behaviour changes from the Java app
 
@@ -146,8 +148,11 @@ Deliberate fixes, so the two versions won't match exactly:
 - **An exact estimate counts as neutral** in the confidence tendency (it counted
   as over confident).
 - **Passwords use bcrypt** instead of salted SHA-512. Sessions are DB-backed cookies.
+- **Passwords can be changed and recovered, without email.** `/account` changes
+  your own password and signs out your other sessions. Forgotten passwords go
+  through an admin: `/users` gives the user a one-time temporary password, and
+  they must choose a new one at their next login before any other page opens.
 - **Exercise/suggestion → category** is a single foreign key rather than a join
   table, since only one category was ever used.
 
-Not ported: `oldreports`, `users/EditUsers` and `users/MyAccount` (no templates,
-so unreachable in the original), and the unused `EstimateTask` regression stub.
+Not ported: `oldreports` and the unused `EstimateTask` regression stub.

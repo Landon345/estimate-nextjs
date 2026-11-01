@@ -17,6 +17,8 @@ export type CurrentUser = {
   username: string;
   roles: string[];
   isAdmin: boolean;
+  /** An admin reset the password; the user must choose a new one before anything else. */
+  mustChangePassword: boolean;
 };
 
 /** Session tokens are random and high-entropy, so a fast hash is enough. */
@@ -60,6 +62,14 @@ export async function endSession(): Promise<void> {
   jar.delete(SESSION_COOKIE);
 }
 
+/** Sign the user out everywhere except this browser (after a password change). */
+export async function endOtherSessions(userId: number): Promise<void> {
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  await prisma.session.deleteMany({
+    where: { userId, ...(token ? { tokenHash: { not: hashToken(token) } } : {}) },
+  });
+}
+
 /** The signed-in user, or null. Deduplicated per request. */
 export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
@@ -69,7 +79,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     where: { tokenHash: hashToken(token) },
     select: {
       expiresAt: true,
-      user: { select: { id: true, username: true, roles: { select: { name: true } } } },
+      user: { select: { id: true, username: true, mustChangePassword: true, roles: { select: { name: true } } } },
     },
   });
   if (!session || session.expiresAt <= new Date()) return null;
@@ -80,13 +90,24 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     username: session.user.username,
     roles,
     isAdmin: roles.includes("admin"),
+    mustChangePassword: session.user.mustChangePassword,
   };
 });
 
-/** For pages and actions that need a signed-in user. */
-export async function requireUser(): Promise<CurrentUser> {
+/**
+ * Signed in, even with a password change pending. Only the account page and its
+ * action use this; everything else goes through requireUser.
+ */
+export async function requireSession(): Promise<CurrentUser> {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  return user;
+}
+
+/** For pages and actions that need a signed-in user. Sends users with a temporary password to /account first. */
+export async function requireUser(): Promise<CurrentUser> {
+  const user = await requireSession();
+  if (user.mustChangePassword) redirect("/account");
   return user;
 }
 

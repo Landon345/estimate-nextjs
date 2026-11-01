@@ -1,6 +1,7 @@
 // Runs a Prisma CLI command against the cloud database (CLOUD_DATABASE_URL in
 // .env) instead of the local one. Used by the db:cloud:* scripts:
-//   pnpm db:cloud:status | db:cloud:deploy | db:cloud:seed [--demo]
+//   pnpm db:cloud:status | db:cloud:deploy | db:cloud:seed [--demo] | db:cloud:admin [username]
+// "--exec <cmd>" runs any command (e.g. a tsx script) instead of the Prisma CLI.
 // Migrations go over the direct host (db.prisma.io); the pooled host can't hold
 // the session they need. Set CLOUD_DIRECT_URL to override the derived address.
 // The seed skips the demo accounts (shared "pass1234" logins, one an admin)
@@ -27,10 +28,11 @@ if (!direct) {
 
 const args = process.argv.slice(2);
 const demo = args.includes("--demo");
-const prismaArgs = args.filter((arg) => arg !== "--demo");
+const rest = args.filter((arg) => arg !== "--demo");
+const command = rest[0] === "--exec" ? rest.slice(1) : ["prisma", ...rest];
 
-console.log(`Running "prisma ${prismaArgs.join(" ")}" against the cloud database at ${url.hostname}.`);
-const result = spawnSync(["pnpm", "exec", "prisma", ...prismaArgs].join(" "), {
+console.log(`Running "${command.join(" ")}" against the cloud database at ${url.hostname}.`);
+const result = spawnSync(["pnpm", "exec", ...command].join(" "), {
   stdio: "inherit",
   shell: true,
   env: { ...process.env, DATABASE_URL: pooled, DIRECT_URL: direct, SEED_DEMO: demo ? "1" : "0" },

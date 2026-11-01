@@ -14,10 +14,12 @@ datasource db {
 // ─── Accounts ────────────────────────────────────────────────────────────────
 
 model User {
-  id           Int      @id @default(autoincrement())
-  username     String   @unique @db.VarChar(128)
-  passwordHash String
-  createdAt    DateTime @default(now())
+  id                 Int      @id @default(autoincrement())
+  username           String   @unique @db.VarChar(128)
+  passwordHash       String
+  /// Set when an admin resets the password to a temporary one; the user must pick a new one.
+  mustChangePassword Boolean  @default(false)
+  createdAt          DateTime @default(now())
 
   roles           Role[]
   sessions        Session[]

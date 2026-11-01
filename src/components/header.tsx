@@ -43,7 +43,12 @@ async function HeaderNav() {
     { href: "/reports", label: "Reports" },
     { href: "/events", label: "Events" },
     { href: "/estimation", label: "Calibration" },
-    ...(user.isAdmin ? [{ href: "/categories", label: "Categories" }] : []),
+    ...(user.isAdmin
+      ? [
+          { href: "/categories", label: "Categories" },
+          { href: "/users", label: "Users" },
+        ]
+      : []),
   ];
 
   return (
@@ -52,7 +57,13 @@ async function HeaderNav() {
         <NavLinks links={links} />
       </nav>
       <div className="flex items-center gap-3">
-        <span className="hidden text-sm text-slate-400 sm:inline">{user.username}</span>
+        <Link
+          href="/account"
+          title="Account settings"
+          className="max-w-40 truncate text-sm text-slate-400 hover:text-white hover:underline"
+        >
+          {user.username}
+        </Link>
         <form action={logout}>
           <button className={buttonClass("inverse", "sm")}>
             Log Out
